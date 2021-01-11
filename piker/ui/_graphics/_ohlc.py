@@ -21,7 +21,7 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import pyqtgraph as pg
-from numba import jit, float64, int64  # , optional
+from numba import njit, float64, int64  # , optional
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QLineF, QPointF
 # from numba import types as ntypes
@@ -70,7 +70,7 @@ def lines_from_ohlc(row: np.ndarray, w: float) -> Tuple[QLineF]:
     return [hl, o, c]
 
 
-@jit(
+@njit(
     # TODO: for now need to construct this manually for readonly arrays, see
     # https://github.com/numba/numba/issues/4511
     # ntypes.Tuple((float64[:], float64[:], float64[:]))(
@@ -78,7 +78,6 @@ def lines_from_ohlc(row: np.ndarray, w: float) -> Tuple[QLineF]:
     #     int64,
     #     optional(float64),
     # ),
-    nopython=True,
     nogil=True
 )
 def path_arrays_from_ohlc(

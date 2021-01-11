@@ -20,7 +20,7 @@ Momentum bby.
 from typing import AsyncIterator, Optional
 
 import numpy as np
-from numba import jit, float64, optional, int64
+from numba import njit, float64, optional, int64
 
 from ..data._normalize import iterticks
 
@@ -29,13 +29,12 @@ from ..data._normalize import iterticks
 # - how to handle non-plottable values
 # - composition of fsps / implicit chaining
 
-@jit(
+@njit(
     float64[:](
         float64[:],
         optional(float64),
         optional(float64)
     ),
-    nopython=True,
     nogil=True
 )
 def ema(
@@ -94,7 +93,7 @@ def ema(
     return s
 
 
-# @jit(
+# @njit(
 #     float64[:](
 #         float64[:],
 #         int64,
