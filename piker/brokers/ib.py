@@ -169,6 +169,7 @@ _adhoc_futes_set = {
     # equities
     'nq.globex',
     'mnq.globex',
+
     'es.globex',
     'mes.globex',
 
@@ -176,8 +177,20 @@ _adhoc_futes_set = {
     'brr.cmecrypto',
     'ethusdrr.cmecrypto',
 
+    # agriculture
+    'he.globex',  # lean hogs
+    'le.globex',  # live cattle (geezers)
+    'gf.globex',  # feeder cattle (younguns)
+
+    # raw
+    'lb.globex',  # random len lumber
+
     # metals
-    'xauusd.cmdty',
+    'xauusd.cmdty',  # gold spot
+    'gc.nymex',
+    'mgc.nymex',
+
+    'xagusd.cmdty',  # silver spot
 }
 
 # exchanges we don't support at the moment due to not knowing
@@ -310,7 +323,8 @@ class Client:
                     unique_sym = f'{con.symbol}.{con.primaryExchange}'
 
                     as_dict = asdict(d)
-                    # nested dataclass we probably don't need and that won't IPC serialize
+                    # nested dataclass we probably don't need and that
+                    # won't IPC serialize
                     as_dict.pop('secIdList')
 
                     details[unique_sym] = as_dict
@@ -553,7 +567,7 @@ class Client:
             else:
                 item = ('status', obj)
 
-            log.info(f'eventkit event -> {eventkit_obj}: {item}')
+            log.info(f'eventkit event ->\n{pformat(item)}')
 
             try:
                 to_trio.send_nowait(item)
@@ -1311,11 +1325,34 @@ async def trades_dialogue(
         n.start_soon(handle_order_requests, ems_stream)
 
         async for event_name, item in ib_trade_events_stream:
+            print(f' ib sending {item}')
 
-            # XXX: begin normalization of nonsense ib_insync internal
-            # object-state tracking representations...
+            # TODO: templating the ib statuses in comparison with other
+            # brokers is likely the way to go:
+            # https://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html#a17f2a02d6449710b6394d0266a353313
+            # short list:
+            # - PendingSubmit
+            # - PendingCancel
+            # - PreSubmitted (simulated orders)
+            # - ApiCancelled (cancelled by client before submission
+            #                 to routing)
+            # - Cancelled
+            # - Filled
+            # - Inactive (reject or cancelled but not by trader)
+
+            # XXX: here's some other sucky cases from the api
+            # - short-sale but securities haven't been located, in this case we
+            #    should probably keep the order in some kind of weird state or cancel
+            #    it outright?
+            # status='PendingSubmit', message=''),
+            # status='Cancelled', message='Error 404,
+            #   reqId 1550: Order held while securities are located.'),
+            # status='PreSubmitted', message='')],
 
             if event_name == 'status':
+
+                # XXX: begin normalization of nonsense ib_insync internal
+                # object-state tracking representations...
 
                 # unwrap needed data from ib_insync internal types
                 trade: Trade = item
@@ -1327,10 +1364,13 @@ async def trades_dialogue(
 
                     reqid=trade.order.orderId,
                     time_ns=time.time_ns(),  # cuz why not
+
+                    # everyone doin camel case..
                     status=status.status.lower(),  # force lower case
 
                     filled=status.filled,
                     reason=status.whyHeld,
+
                     # this seems to not be necessarily up to date in the
                     # execDetails event.. so we have to send it here I guess?
                     remaining=status.remaining,
@@ -1360,7 +1400,8 @@ async def trades_dialogue(
                     'contract': asdict(fill.contract),
                     'execution': asdict(fill.execution),
                     'commissions': asdict(fill.commissionReport),
-                    'broker_time': execu.time,   # supposedly IB server fill time
+                    # supposedly IB server fill time
+                    'broker_time': execu.time,
                     'name': 'ib',
                 }
 
@@ -1450,6 +1491,12 @@ async def open_symbol_search(
             if not pattern or pattern.isspace():
                 log.warning('empty pattern received, skipping..')
 
+                # TODO: *BUG* if nothing is returned here the client
+                # side will cache a null set result and not showing
+                # anything to the use on re-searches when this query
+                # timed out. We probably need a special "timeout" msg
+                # or something...
+
                 # XXX: this unblocks the far end search task which may
                 # hold up a multi-search nursery block
                 await stream.send({})
@@ -1457,7 +1504,7 @@ async def open_symbol_search(
                 continue
 
             log.debug(f'searching for {pattern}')
-            # await tractor.breakpoint()
+
             last = time.time()
             results = await _trio_run_client_method(
                 method='search_stocks',
